@@ -7,12 +7,12 @@
 
 	<script>
 
-     var o=new myDatabase();
+     var o=new myDatabase('ddds','','','',true);
+       o.isdebug=true;
+   // console.log(o);
 
-     console.log(o);
-     o.createTable();
-     o.insert();
-     o.query();
+    o.query();
+
 	</script>
 </head>
 <body>

@@ -1,0 +1,25 @@
+{
+  "name": "mydatabase",
+  "version": "1.0.0",
+  "description": "html5数据库操作",
+  "main": "test.html",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shipeifei/myDatabase.git"
+  },
+  "keywords": [
+    "html5本地数据库操作插件"
+  ],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/shipeifei/myDatabase/issues"
+  },
+  "homepage": "https://github.com/shipeifei/myDatabase#readme",
+  "devDependencies": {
+    "grunt": "^0.4.5"
+  }
+}
