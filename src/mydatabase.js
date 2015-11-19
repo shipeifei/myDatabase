@@ -93,7 +93,7 @@
             return !!(object && object.constructor && object.call && object.apply);
         };
 
-        var types = ['Arguments', 'Function', 'String', 'Number', 'Date', 'RegExp'];
+        var types = ['Arguments', 'String', 'Number', 'Date', 'RegExp'];
         types.forEach(function(name) {
             me['is' + name] = function(obj) {
                 return toString.call(obj) === '[object ' + name + ']';
@@ -152,6 +152,31 @@
                 return false;
             }
         };
+        //数据循环
+        me.each = function(obj, cb) {
+            for (var k in obj) {
+                cb(obj[k], k);
+            }
+        };
+
+        /**
+         * 返回占位符
+         * @return {[type]} [description]
+         */
+        me.placeholder = function() {
+            return "?";
+        };
+
+        //第一个参数表示匹配到的字符，
+        //第二个参数表示匹配时的字符最小索引位置(RegExp.index)
+        //第三个参数表示被匹配的字符串(RegExp.input)
+        me.format = function(str) {
+            var args = arguments;
+            return str.replace(/{(\d+)}/g, function(match, number) {
+                var num = parseInt(number, 10);
+                return isFinite(num) ? args[1 + num] : match;
+            });
+        };
 
         return me;
 
@@ -172,6 +197,7 @@
 
 
         var self = dataType;
+        var regexIso8601 = /^(\d{4}|\+\d{6})(?:-(\d{2})(?:-(\d{2})(?:T(\d{2}):(\d{2}):(\d{2})\.(\d{1,3})(?:Z|([\-+])(\d{2}):(\d{2}))?)?)?)?$/;
 
         self.cs = {
             //数据库字段类型
@@ -250,6 +276,57 @@
             return self.cs.any;
         };
 
+        this.processRow = function(row) {
+            var obj = {};
+            for (var key in row) {
+                var value = row[key];
+                if (utils.isString(value) && value.match(regexIso8601)) {
+                    var d = Date.parse(value);
+                    if (d) {
+                        value = new Date(d);
+                    }
+                }
+                obj[key] = value;
+            }
+            return obj;
+        };
+
+        self.processResultType = function(results, type) {
+            switch (type) {
+                case self.cs.any:
+                    return results;
+                case self.cs.insert:
+                    return results.insertId;
+                case self.cs.rowset:
+                    var len = results.rows.length,
+                        i;
+                    var rows = [];
+                    for (i = 0; i < len; i++) {
+                        var item = self.processRow(results.rows.item(i));
+                        rows.push(item);
+                    }
+                    return rows;
+                case self.cs.row:
+                    if (results.rows.length) {
+                        return self.processRow(results.rows.item(0));
+                    }
+                    return null;
+                case self.cs.scalar:
+                    if (results.rows.length) {
+                        var obj = self.processRow(results.rows.item(0));
+                        for (var key in obj) {
+                            return obj[key];
+                        }
+                    }
+                    return null;
+                case self.cs.nonQuery:
+                    return results.rowsAffected;
+                default:
+                    return results;
+            }
+
+        };
+
         /**
          * 转换类型为sqlite识别的类型
          * @param  {[type]} p [description]
@@ -295,14 +372,6 @@
         this.description = description || this.defaultConfig.description;
         this.version = version || this.defaultConfig.version;
         this.size = size || this.defaultConfig.size;
-
-        this.bug = false;
-        this.dbLog = function(obj) {
-
-            if (this.isdebug) {
-                console.log(obj);
-            }
-        }
         this.initData();
 
 
@@ -312,11 +381,16 @@
 
     //原型方法
     myDatabase.prototype = {
-
+        bug: false,
         tableSQL: "SELECT name FROM sqlite_master   WHERE type='table' ORDER BY name",
 
         myDB: openDatabase(this.dataName, this.version, this.description, this.size),
+        dbLog: function(obj) {
 
+            if (this.isdebug) {
+                console.log(obj);
+            }
+        },
 
         //初始化
         initData: function() {
@@ -351,12 +425,15 @@
             var _args = param ? param.map(dataType.typeToDb) : param;
             this.myDB.transaction(function(tx) {
                 tx.executeSql(sql, _args, function(tx, result) {
-                    if (typeof(callback) == 'function') {
+
+                    if (utils.isFunction(callback)) {
+
                         callback(true, tx, result);
                     }
                     return true;
                 }, function(tx, error) {
-                    if (typeof(callback) == 'function') {
+                    if (utils.isFunction(callback)) {
+
                         callback(false, tx, error);
                     }
                     console.log(error);
@@ -366,52 +443,234 @@
         },
 
         /**
+         * 创建字段
+         * @param  {[type]} columnName  字段名称
+         * @param  {[type]} columnProps 字段类型，支持不为空等多条件
+         *  task: { type: 'text', required: true, unique: true},
+            duedate: 'date',
+            completed: 'boolean'
+         * @return {[type]}             [description]
+         */
+        _createColumn: function(columnName, columnProps) {
+            if (utils.isString(columnProps)) {
+                return columnName + " " + dataType.translateType(columnProps);
+            }
+            return columnName + " " + dataType.translateType(columnProps.type) +
+                (columnProps.required ? " NOT NULL" : "") +
+                (columnProps.unique ? " UNIQUE" : "");
+        },
+
+        /**
          * 创建表
+         * @param  {[type]} tableName   表明
+         * @param  {[type]} columns     表字段
+         * { task: 'text', duedate: 'date'}, true
+         * @param  {[type]} checkExists 表不存在是否创建
+         * @return {[type]}             [description]
+         */
+        createTable: function(tableName, columns, checkExists) {
+
+            var _sql = "CREATE TABLE " + (checkExists ? "IF NOT EXISTS " : "") + tableName + "(";
+            var _cols = [];
+
+            _cols.push(this._createColumn('id', "pk"));
+            for (var c in columns) {
+                if (c === "timestamps") {
+                    _cols.push("created_at int");
+                    _cols.push("updated_at int");
+                } else if (c !== 'id') {
+                    _cols.push(this._createColumn(c, columns[c]));
+                }
+            }
+
+
+            _sql += _cols.join(", ") + ")";
+            this.dbLog(_sql);
+            this.execSql(_sql, [], function(ok, tx, result) {
+                if (ok) {
+
+                    console.log(result);
+                } else {
+
+                    console.log("创建表:" + tableName + "失败," + result.message);
+                }
+            });
+        },
+
+        /**
+         * 增加表字段
+         * @param {[type]} tableName   [description]
+         * @param {[type]} columnName  [description]
+         * @param {[type]} columnProps [description]
+         */
+        addColumn: function(tableName, columnName, columnProps) {
+
+            var _sql = "ALTER TABLE " + tableName + " ADD COLUMN " + this._createColumn(columnName, columnProps);
+            this.dbLog(_sql);
+            this.execSql(_sql, [], function(ok, tx, result) {
+                if (ok) {
+
+                    console.log(result);
+                } else {
+
+                    console.log("增加表:" + tableName + "失败," + result.message);
+                }
+            });
+        },
+
+        /**
+         * 创建单个表
          * @param  {[type]} tableName 表明
          * @param  {[type]} columns   表字段{ task: 'text', duedate: 'date'}
          * @return {[type]}           [description]
          */
         define: function(tableName, columns) {
 
+            this.createTable(tableName, columns, true);
         },
-        createTable: function() {
-            this.myDB.transaction(function(tx) {
-                tx.executeSql(
-                    "create table if not exists stu (id REAL UNIQUE, name TEXT)", [],
-                    function(tx, result) {
-                        alert('创建stu表成功');
-                    },
-                    function(tx, error) {
-                        alert('创建stu表失败:' + error.message);
-                    });
-            });
-        },
-        insert: function() {
-            // this.myDB.transaction(function(tx) {
-            //     tx.executeSql(
-            //         "insert into stu (id, name) values(?, ?)", [1, '徐明祥'],
-            //         function() {
-            //             alert('添加数据成功');
-            //         },
-            //         function(tx, error) {
-            //             alert('添加数据失败: ' + error.message);
-            //         });
-            // });
 
-            this.execSql("insert into stu (id, name) values(?, ?)", [2, '时培飞'], function(ok, tx, result) {
+        /**
+         * 创建多个表
+         * @param  {[type]} obj [description]
+         * @return {[type]}     [description]
+         * var dbTable =
+         [
+              {
+                table : 'foo',
+                properties :
+                    {
+                        task:{type:'task',required:true},
+                        duedate: 'date'
+                    }
 
-                if (ok) {
-                    console.log(result);
-                } else {
-                    console.log(error);
+               }
+             ];
+         */
+        defineMutile: function(tables) {
+            if (utils.isUndefined(tables)) {
+                console.log("参数不正确");
+                return false;
+            }
+
+            var _define = this.define;
+
+
+
+            if (Array.isArray(tables)) {
+                for (var item in tables) {
+                    console.log(tables[item].table);
+                    console.log(tables[item].properties);
+                    this.define(tables[item].table, tables[item].properties);
                 }
 
+
+            } else {
+                console.log("参数只支持数组格式:[{table: 'foo',properties: {task: {type: 'text',required: true},duedate: 'date'}}]");
+            }
+        },
+
+
+        dropTable: function(tableName) {
+            var _sql = "DROP TABLE IF EXISTS " + tableName;
+            this.execSql(_sql, [], function(ok, tx, result) {
+                if (ok) {
+
+                    console.log(result);
+                } else {
+
+                    console.log("删除表:" + tableName + "失败," + result.message);
+                }
             });
+        },
+
+        /**
+         * 主要针对增、删、改的操作
+         * @param  {[type]}   sql      [description]
+         * @param  {[type]}   parames  [description]
+         * @param  {Function} callback [description]
+         * @return {[type]}            [description]
+         */
+        nonQuery: function(sql, parames, callback) {
+
+
 
         },
+
+         /**
+         * 修改数据
+         * @param  {[type]} tableName  [description]
+         * @param  {[type]} conditions [{name:'shipeifei',password:'123456'}}]
+         * @return {[type]}            [description]
+         */
+        update: function(tableName, columns, conditions,callback) {
+
+            //update student set name='shipeifei' ,password='123' where id=1
+            //
+
+        },
+        /**
+         * 插入数据
+         * @param  {[type]} tableName  [表名]
+         * @param  {[type]} conditions [插入数据{name:'shipefei',password:'123456'}]
+         * @return {[type]}            [description]
+         */
+        insert: function(tableName, conditions, callback) {
+
+
+
+            if (!conditions) {
+                throw "insert should be called with parames"; //{ return new Query().raiseError("insert should be called with data"); }
+            }
+
+            var sql = utils.format("INSERT INTO {0} ({1}) VALUES(", tableName, Object.keys(conditions).join(", "));
+            var params = [];
+            var values = [];
+
+            var seed = 0;
+            for (var key in conditions) {
+                values.push(utils.placeholder(++seed));
+                params.push(conditions[key]);
+            }
+
+            sql += values.join(", ") + ")";
+            this.execSql(sql, params, callback);
+
+        },
+
+        /**
+         * 插入多条数据
+         * @param  {[type]}   tableName  [description]
+         * @param  {[type]}   conditions [description]
+         * @param  {Function} callback   [description]
+         * @return {[type]}              [description]
+         */
+        insertMutile: function(tableName, conditions, callback) {
+            if (utils.isUndefined(conditions)) {
+                console.log("参数不正确");
+                return false;
+            }
+
+
+            if (Array.isArray(conditions)) {
+                for (var item in conditions) {
+
+                    this.insert(tableName, conditions[item]);
+                }
+
+
+            } else {
+                console.log("参数只支持数组格式:[{name:'shipefei',password:'123456'},{name:'shipefei',password:'123456'}]");
+            }
+
+        },
+
+        /**
+         * 查询表
+         * @return {[type]} [description]
+         */
         query: function() {
 
-            this.execSql("select * from stu", [], function(ok, tx, result) {
+            this.execSql("select * from todo", [], function(ok, tx, result) {
 
                 if (ok) {
                     console.log(result);
@@ -423,12 +682,47 @@
 
         },
 
+        /**
+         * 查询一条数据
+         * @param  {[type]} sql    select * from where id=1
+         * @param  {[type]} params 参数数组
+         * @return {[type]}        [description]
+         */
+        queryOne: function(sql, params, callback) {
 
-        dropTable: function() {
-            this.myDB.transaction(function(tx) {
-                tx.executeSql('drop table stu');
-            });
-        }
+            var sql = sql || "";
+            var params = params || [];
+
+            this.dbLog(sql + "参数:" + params.join(","));
+
+            this.execSql(sql, params, callback);
+
+
+        },
+
+        /**
+         * 查询所有的数据
+         * select name ,password from stu
+         * @param  {[type]} sql    [description]
+         * @param  {[type]} columns 查询字段，可以：单个字符、数组
+         * @return {[type]}        [description]
+         */
+        all: function(tableName, columns, callback) {
+
+            var sql = "select ";
+
+            sql += utils.isString(columns) ? columns : (columns.length === 1 ? columns[0] : columns.join(" , ")) + " from " + tableName;
+
+            this.dbLog(sql);
+            this.execSql(sql, [], callback);
+
+        },
+
+
+
+
+
+
 
 
     }
