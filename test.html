@@ -1,21 +1,80 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-	<meta charset="UTF-8">
-	<title>Document</title>
-	<script src="src/mydatabase.js"></script>
+    <meta charset="UTF-8">
+    <title>Document</title>
+    <script src="src/mydatabase.js"></script>
+    <script>
+    var o = new myDatabase('ddds', '', '', '', true);
+    o.isdebug = true;
 
-	<script>
+    // o.dropTable("todo");
 
-     var o=new myDatabase('ddds','','','',true);
-       o.isdebug=true;
-   // console.log(o);
-    o.insert();
+    // o.define("todo", {
+    //     task:{type:'task',required:true},
+    //     duedate: 'date'
+    // });
+    //增加表字段
+    // o.addColumn("todo", "name", "text")
+    //插入单条数据
+
+    o.insert('todo', {
+        task: 'shipeifeifie',
+        duedate: new Date(2013, 11, 31)
+    });
+    //插入多条数据
+    o.insertMutile('todo', [{
+        task: 'shipeifeifie',
+        duedate: new Date()
+    }, {
+        task: 'shipeifeifie',
+        duedate: new Date()
+    }]);
+
+    //查询表
     o.query();
+    // o.all("todo", ["task", "id", "name"], function(ok, tx, result) {
+    //     for (var item in result.rows) {
+    //         console.log(result.rows[item].id);
+    //     }
+    // });
+    // o.queryOne("select * from todo where id=?",[2],function (ok, tx, result) {
+    // 	console.log(result);
+    // });
+    //
+    //
+    //
+    // var dbTable = [
+    //    {
+    //      table: 'foo',
+    //      properties: {
+    //          task: {
+    //              type: 'text',
+    //              required: true
+    //          },
+    //          duedate: 'date'
+    //      }
+    //   },
+    //     {
+    //     table: 'foo1',
+    //     properties: {
+    //         task: {
+    //             type: 'text',
+    //             required: true
+    //         },
+    //         duedate: 'date'
+    //     }
+    //    }
 
-	</script>
+    // ];
+
+    // //创建多个表
+    // o.defineMutile(" ");
+    </script>
 </head>
-<body>
 
+<body>
 </body>
+
 </html>
