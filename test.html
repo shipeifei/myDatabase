@@ -19,18 +19,24 @@
     // o.addColumn("todo", "name", "text")
     //插入单条数据
 
-    o.insert('todo', {
-        task: 'shipeifeifie',
-        duedate: new Date(2013, 11, 31)
-    });
-    //插入多条数据
-    o.insertMutile('todo', [{
-        task: 'shipeifeifie',
-        duedate: new Date()
-    }, {
-        task: 'shipeifeifie',
-        duedate: new Date()
-    }]);
+    // o.insert('todo', {
+    //     task: 'shipeifeifie',
+    //     duedate: new Date(2013, 11, 31)
+    // });
+    // //插入多条数据
+    // o.insertMutile('todo', [{
+    //     task: 'shipeifeifie',
+    //     duedate: new Date()
+    // }, {
+    //     task: 'shipeifeifie',
+    //     duedate: new Date()
+    // }]);
+
+    o.update('todo',{task:'ffff'},{' id =':'2'});
+
+
+     o.delete('todo',{' id = ':'2'});
+
 
     //查询表
     o.query();
