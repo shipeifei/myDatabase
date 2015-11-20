@@ -383,7 +383,16 @@
     myDatabase.prototype = {
         bug: false,
         tableSQL: "SELECT name FROM sqlite_master   WHERE type='table' ORDER BY name",
-
+        operationsMap: {
+            '=': '=',
+            '!': '!=',
+            '>': '>',
+            '<': '<',
+            '>=': '>=',
+            '<=': '<=',
+            '!=': '<>',
+            '<>': '<>'
+        },
         myDB: openDatabase(this.dataName, this.version, this.description, this.size),
         dbLog: function(obj) {
 
@@ -485,7 +494,7 @@
 
 
             _sql += _cols.join(", ") + ")";
-            this.dbLog(_sql);
+            this.dbLog("创建table的语句为：" + _sql);
             this.execSql(_sql, [], function(ok, tx, result) {
                 if (ok) {
 
@@ -558,8 +567,7 @@
 
             if (Array.isArray(tables)) {
                 for (var item in tables) {
-                    console.log(tables[item].table);
-                    console.log(tables[item].properties);
+
                     this.define(tables[item].table, tables[item].properties);
                 }
 
@@ -592,20 +600,104 @@
          */
         nonQuery: function(sql, parames, callback) {
 
+            //select * from todo where id=5 and task='shipeifei' order by id desc limit 1 offset 3
 
+        },
+        /**
+         * 删除数据
+         * @param  {[type]}   tableName [表]
+         * @param  {[type]}   where     [{'id = ':'5'}}]
+         * @param  {Function} callback  [description]
+         * @return {[type]}             [description]
+         */
+        delete: function(tableName, where, callback) {
+
+
+
+            var sql = " delete from " + tableName;
+            if (utils.isString(where)) {
+                sql += " where " + where;
+            }
+
+
+            sql += this.where(where);
+
+            this.execSql(sql, [], callback);
 
         },
 
-         /**
+        /**
          * 修改数据
          * @param  {[type]} tableName  [description]
-         * @param  {[type]} conditions [{name:'shipeifei',password:'123456'}}]
+         * @param  {[type]} conditions [{name != :'shipeifei',password:'123456'}}]
          * @return {[type]}            [description]
          */
-        update: function(tableName, columns, conditions,callback) {
+        update: function(tableName, fields, where, callback) {
 
             //update student set name='shipeifei' ,password='123' where id=1
             //
+
+            if (!where) {
+                throw "update should be called with conditions";
+                return false;
+                //{ return new Query().raiseError("insert should be called with data"); }
+            }
+
+            if (!fields) {
+                throw "update should be called with columns";
+                return 0;
+                //{ return new Query().raiseError("insert should be called with data"); }
+            }
+
+            if (!utils.isObject(fields)) {
+                throw "fields 必须是json对象类型";
+                return 0;
+            }
+
+
+            var columns = [];
+            var values = [];
+            var seed = 0;
+            for (var key in fields) {
+                columns.push(key + ' = ' + utils.placeholder(++seed));
+                values.push(fields[key]);
+            }
+
+            var sql = utils.format("update {0} set {1}", tableName, columns.join(","));
+
+            if (utils.isString(where)) {
+                sql += " where " + where;
+            }
+
+            sql += this.where(where);
+            console.log("修改sql语句 :" + sql);
+            this.execSql(sql, values, callback);
+
+        },
+        where: function(condition) {
+
+
+            var sql = "";
+            var operiation = this.operationsMap;
+            return (function() {
+
+                if (utils.isObject(condition)) {
+                    var wheres = [];
+                    for (var item in condition) {
+
+                        var parts = utils.trim(item).split(/ +/);
+                        var property = parts[0];
+                        var operation = operiation[parts[1]] || '=';
+                        wheres.push(property + ' ' + operation + "'" + condition[item] + "'");
+                    }
+                    sql += " where " + wheres.join(' and ');
+
+
+                }
+                console.log(sql);
+                return sql;
+            })();
+
 
         },
         /**
