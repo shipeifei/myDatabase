@@ -1,14 +1,5 @@
 
 
-
-
-
-<!DOCTYPE html>
-<html lang="en">
-
-<head>
-    <meta charset="UTF-8">
-    <title>Document</title>
     <script src="dist/mydatabase.min.js"></script>
     <script>
     //实例化一个数据库对象
